@@ -1805,7 +1805,7 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             lagged_sequence = self.model.get_lagged_subsequences(
                 sequence=repeated_past_values,
                 subsequences_length=1 + k,
-                shift=1,
+                shift=0,
             )
 
             lags_shape = lagged_sequence.shape
