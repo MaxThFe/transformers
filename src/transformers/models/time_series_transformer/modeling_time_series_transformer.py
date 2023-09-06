@@ -193,13 +193,12 @@ class TimeSeriesNOPScaler(nn.Module):
         loc = torch.zeros_like(data, requires_grad=False).mean(dim=self.dim, keepdim=self.keepdim)
         return data, loc, scale
 
-
+ 
 def nll(input: torch.distributions.Distribution, target: torch.Tensor) -> torch.Tensor:
     """
     Computes the negative log likelihood loss from input distribution with respect to target.
     """
     return -input.log_prob(target)
-
 
 def weighted_average(input_tensor: torch.Tensor, weights: Optional[torch.Tensor] = None, dim=None) -> torch.Tensor:
     """
@@ -1506,13 +1505,16 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
 
         self.parameter_projection = self.distribution_output.get_parameter_projection(self.model.config.d_model)
         self.target_shape = self.distribution_output.event_shape
-
+        #TODO 
         if config.loss == "nll":
             self.loss = nll
+        elif config.loss == "mse":
+            self.loss = nn.MSELoss()
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
         # Initialize weights of distribution_output and apply final processing
+        self.regression = nn.Linear(config.d_model, config.input_size)
         self.post_init()
 
     def output_params(self, dec_output):
@@ -1630,11 +1632,10 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         prediction_loss = None
         params = None
         if future_values is not None:
-            params = self.output_params(outputs[0])  # outputs.last_hidden_state
+            prediction = self.regression(outputs[0])  # outputs.last_hidden_state
             # loc is 3rd last and scale is 2nd last output
-            distribution = self.output_distribution(params, loc=outputs[-3], scale=outputs[-2])
-
-            loss = self.loss(distribution, future_values)
+            # TODO
+            loss = self.loss(prediction, future_values)
 
             if future_observed_mask is None:
                 future_observed_mask = torch.ones_like(future_values)
@@ -1777,7 +1778,6 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             return_dict=True,
             use_cache=True,
         )
-
         decoder = self.model.get_decoder()
         enc_last_hidden = outputs.encoder_last_hidden_state
         loc = outputs.loc
@@ -1816,9 +1816,7 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             dec_output = decoder(inputs_embeds=decoder_input, encoder_hidden_states=repeated_enc_last_hidden)
             dec_last_hidden = dec_output.last_hidden_state
 
-            params = self.parameter_projection(dec_last_hidden[:, -1:])
-            distr = self.output_distribution(params, loc=repeated_loc, scale=repeated_scale)
-            next_sample = distr.sample()
+            next_sample = self.regression(dec_output.last_hidden_state[:, -1:]) # TODO: correct?
 
             repeated_past_values = torch.cat(
                 (repeated_past_values, (next_sample - repeated_loc) / repeated_scale), dim=1
