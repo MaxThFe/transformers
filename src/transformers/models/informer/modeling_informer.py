@@ -1784,11 +1784,17 @@ class InformerForPrediction(InformerPreTrainedModel):
         self.parameter_projection = self.distribution_output.get_parameter_projection(self.model.config.d_model)
         self.target_shape = self.distribution_output.event_shape
 
+        #TODO 
         if config.loss == "nll":
             self.loss = nll
+        elif config.loss == "mse":
+            self.loss = nn.MSELoss()
+        elif config.loss == "l1":
+            self.loss = nn.L1Loss()
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
+        self.regression = nn.Linear(config.d_model, config.input_size)
         # Initialize weights of distribution_output and apply final processing
         self.post_init()
 
@@ -1905,11 +1911,10 @@ class InformerForPrediction(InformerPreTrainedModel):
         prediction_loss = None
         params = None
         if future_values is not None:
-            params = self.output_params(outputs[0])  # outputs.last_hidden_state
+            prediction = self.regression(outputs[0])  # outputs.last_hidden_state
             # loc is 3rd last and scale is 2nd last output
-            distribution = self.output_distribution(params, loc=outputs[-3], scale=outputs[-2])
-
-            loss = self.loss(distribution, future_values)
+            # TODO
+            loss = self.loss(prediction, future_values)
 
             if future_observed_mask is None:
                 future_observed_mask = torch.ones_like(future_values)
@@ -2080,7 +2085,7 @@ class InformerForPrediction(InformerPreTrainedModel):
             lagged_sequence = self.model.get_lagged_subsequences(
                 sequence=repeated_past_values,
                 subsequences_length=1 + k,
-                shift=1,
+                shift=0,
             )
 
             lags_shape = lagged_sequence.shape

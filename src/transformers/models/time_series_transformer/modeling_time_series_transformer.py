@@ -33,7 +33,7 @@ from ...modeling_utils import PreTrainedModel
 from ...time_series_utils import NegativeBinomialOutput, NormalOutput, StudentTOutput
 from ...utils import add_start_docstrings, add_start_docstrings_to_model_forward, logging, replace_return_docstrings
 from .configuration_time_series_transformer import TimeSeriesTransformerConfig
-
+import math
 
 logger = logging.get_logger(__name__)
 
@@ -1225,6 +1225,7 @@ class TimeSeriesTransformerDecoder(TimeSeriesTransformerPreTrainedModel):
         )
 
 
+
 @add_start_docstrings(
     "The bare Time Series Transformer Model outputting raw hidden-states without any specific head on top.",
     TIME_SERIES_TRANSFORMER_START_DOCSTRING,
@@ -1484,8 +1485,8 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
             scale=scale,
             static_features=static_feat,
         )
-
-
+    
+    
 @add_start_docstrings(
     "The Time Series Transformer Model with a distribution head on top for time-series forecasting.",
     TIME_SERIES_TRANSFORMER_START_DOCSTRING,
@@ -1510,6 +1511,8 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             self.loss = nll
         elif config.loss == "mse":
             self.loss = nn.MSELoss()
+        elif config.loss == "l1":
+            self.loss = nn.L1Loss()
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
@@ -1805,7 +1808,7 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             lagged_sequence = self.model.get_lagged_subsequences(
                 sequence=repeated_past_values,
                 subsequences_length=1 + k,
-                shift=0,
+                shift=0, # TODO Check this
             )
 
             lags_shape = lagged_sequence.shape
@@ -1813,10 +1816,9 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
 
             decoder_input = torch.cat((reshaped_lagged_sequence, repeated_features[:, : k + 1]), dim=-1)
 
-            dec_output = decoder(inputs_embeds=decoder_input, encoder_hidden_states=repeated_enc_last_hidden)
-            dec_last_hidden = dec_output.last_hidden_state
 
-            next_sample = self.regression(dec_output.last_hidden_state[:, -1:]) # TODO: correct?
+            dec_output = decoder(inputs_embeds=decoder_input, encoder_hidden_states=repeated_enc_last_hidden)
+            next_sample = self.regression(dec_output.last_hidden_state[:, -1:])
 
             repeated_past_values = torch.cat(
                 (repeated_past_values, (next_sample - repeated_loc) / repeated_scale), dim=1

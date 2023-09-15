@@ -1851,6 +1851,8 @@ class AutoformerForPrediction(AutoformerPreTrainedModel):
 
         if config.loss == "nll":
             self.loss = nll
+        elif config.loss == "mse":
+            self.loss = nn.MSELoss()
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
