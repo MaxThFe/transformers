@@ -1320,6 +1320,7 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
         context = past_values[:, -self.config.context_length :]
         observed_context = past_observed_mask[:, -self.config.context_length :]
         _, loc, scale = self.scaler(context, observed_context)
+        #context[observed_context == 0] = 0 # add masking
 
         inputs = (
             (torch.cat((past_values, future_values), dim=1) - loc) / scale
@@ -1446,6 +1447,7 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
+                attention_mask = past_observed_mask[..., 0] #TODO: write HuggingFace?
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
@@ -1510,9 +1512,9 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         if config.loss == "nll":
             self.loss = nll
         elif config.loss == "mse":
-            self.loss = nn.MSELoss()
+            self.loss = nn.MSELoss(reduction="sum")
         elif config.loss == "l1":
-            self.loss = nn.L1Loss()
+            self.loss = nn.L1Loss(reduction="sum")
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
