@@ -912,6 +912,7 @@ class TimeSeriesTransformerEncoder(TimeSeriesTransformerPreTrainedModel):
         hidden_states = self.value_embedding(inputs_embeds)
         embed_pos = self.embed_positions(inputs_embeds.size())
 
+
         hidden_states = self.layernorm_embedding(hidden_states + embed_pos)
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
 
@@ -1320,7 +1321,6 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
         context = past_values[:, -self.config.context_length :]
         observed_context = past_observed_mask[:, -self.config.context_length :]
         _, loc, scale = self.scaler(context, observed_context)
-        #context[observed_context == 0] = 0 # add masking
 
         inputs = (
             (torch.cat((past_values, future_values), dim=1) - loc) / scale
@@ -1447,7 +1447,7 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
-                attention_mask = past_observed_mask[..., 0] #TODO: write HuggingFace?
+                #attention_mask = past_observed_mask[..., 0] #TODO: write HuggingFace?
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
@@ -1457,8 +1457,8 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
 
-        dec_input = transformer_inputs[:, self.config.context_length :, ...]
-        decoder_outputs = self.decoder(
+        dec_input = transformer_inputs[:, self.config.context_length:, ...]
+        decoder_outputs = self.decoder( #TODO is dec_input also empty during training?
             inputs_embeds=dec_input,
             attention_mask=decoder_attention_mask,
             encoder_hidden_states=encoder_outputs[0],
@@ -1512,9 +1512,9 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         if config.loss == "nll":
             self.loss = nll
         elif config.loss == "mse":
-            self.loss = nn.MSELoss(reduction="sum")
+            self.loss = nn.MSELoss() #reduction="sum"
         elif config.loss == "l1":
-            self.loss = nn.L1Loss(reduction="sum")
+            self.loss = nn.L1Loss() #reduction="sum"
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
 
@@ -1803,10 +1803,10 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
 
         repeated_enc_last_hidden = enc_last_hidden.repeat_interleave(repeats=num_parallel_samples, dim=0)
 
-        future_samples = []
+        future_samples = [repeated_past_values[:, -1].unsqueeze(1)]
 
         # greedy decoding
-        for k in range(self.config.prediction_length):
+        for k in range(self.config.prediction_length - 1):
             lagged_sequence = self.model.get_lagged_subsequences(
                 sequence=repeated_past_values,
                 subsequences_length=1 + k,
