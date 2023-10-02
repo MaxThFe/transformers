@@ -1639,8 +1639,8 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         if future_values is not None:
             prediction = self.regression(outputs[0])  # outputs.last_hidden_state
             # loc is 3rd last and scale is 2nd last output
-            # TODO
-            loss = self.loss(prediction, future_values)
+            
+            loss = self.loss(prediction[:,:-1], future_values[:, 1:]) # TODO Idea: First token of future values is not masked
 
             if future_observed_mask is None:
                 future_observed_mask = torch.ones_like(future_values)
