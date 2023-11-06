@@ -291,6 +291,23 @@ class TimeSeriesSinusoidalPositionalEmbedding(nn.Embedding):
         )
         return super().forward(positions)
 
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
+        # Create a long enough 'pe' matrix for max_len
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        # Register as a buffer to avoid model's state_dict
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        # x is assumed to be of shape [seq_len, batch_size, d_model]
+        x = x + self.pe[:x.size(0), :]
+        return x
 
 class TimeSeriesValueEmbedding(nn.Module):
     def __init__(self, feature_size, d_model):
@@ -1488,7 +1505,13 @@ class TimeSeriesTransformerModel(TimeSeriesTransformerPreTrainedModel):
             static_features=static_feat,
         )
     
-    
+class WeightedMSELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weights = torch.Tensor([1,1e5,1,1,1,1e5,1,1,1e5])
+    def forward(self,inputs,targets):
+        return torch.sum(((inputs - targets)**2 ) * self.weights.to(inputs.device))/inputs.numel()
+
 @add_start_docstrings(
     "The Time Series Transformer Model with a distribution head on top for time-series forecasting.",
     TIME_SERIES_TRANSFORMER_START_DOCSTRING,
@@ -1513,6 +1536,8 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             self.loss = nll
         elif config.loss == "mse":
             self.loss = nn.MSELoss() #reduction="sum"
+        elif config.loss == "wmse":
+            self.loss = WeightedMSELoss() #reduction="sum"
         elif config.loss == "l1":
             self.loss = nn.L1Loss() #reduction="sum"
         else:
@@ -1639,10 +1664,10 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         prediction_loss = None
         params = None
         if future_values is not None:
-            prediction = self.regression(outputs[0])  # outputs.last_hidden_state
+            prediction = self.regression(outputs[0][:, :-1])  # outputs.last_hidden_state
             # loc is 3rd last and scale is 2nd last output
             
-            loss = self.loss(prediction[:,:-1], future_values[:, 1:]) # TODO Idea: First token of future values is not masked
+            loss = self.loss(prediction, future_values[:, 1:]) # TODO Idea: First token of future values is not masked
 
             if future_observed_mask is None:
                 future_observed_mask = torch.ones_like(future_values)
@@ -1798,6 +1823,7 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         repeated_past_values = (
             past_values.repeat_interleave(repeats=num_parallel_samples, dim=0) - repeated_loc
         ) / repeated_scale
+        repeated_past_values = repeated_past_values[:, -1:]
 
         expanded_static_feat = static_feat.unsqueeze(1).expand(-1, future_time_features.shape[1], -1)
         features = torch.cat((expanded_static_feat, future_time_features), dim=-1)
