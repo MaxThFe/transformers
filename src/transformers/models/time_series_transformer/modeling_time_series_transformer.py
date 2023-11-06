@@ -1519,7 +1519,9 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
             raise ValueError(f"Unknown loss function {config.loss}")
 
         # Initialize weights of distribution_output and apply final processing
-        self.regression = nn.Linear(config.d_model, config.input_size)
+        self.regression = nn.Sequential(nn.Linear(config.d_model, config.input_size), 
+                                        nn.ReLU(),
+                                        nn.Linear(config.input_size, config.input_size))
         self.post_init()
 
     def output_params(self, dec_output):
