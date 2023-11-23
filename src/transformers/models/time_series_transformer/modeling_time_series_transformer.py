@@ -1511,9 +1511,11 @@ class TimeSeriesTransformerForPrediction(TimeSeriesTransformerPreTrainedModel):
         #TODO 
         if config.loss == "nll":
             self.loss = nll
+        elif config.loss == "L2":
+            self.loss = nn.MSELoss() #reduction="sum"
         elif config.loss == "mse":
             self.loss = nn.MSELoss() #reduction="sum"
-        elif config.loss == "l1":
+        elif config.loss == "L1":
             self.loss = nn.L1Loss() #reduction="sum"
         else:
             raise ValueError(f"Unknown loss function {config.loss}")
